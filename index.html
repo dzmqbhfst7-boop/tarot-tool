@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>塔罗解读生成器</title>
+<style>
+:root{
+  --paper:#FBF6ED; --cream:#FFF9EE; --line:#E8D9C0; --ink:#6B4F3A;
+  --soft:#9C8474; --pink:#F286A9; --coral:#EF6B45; --pinkbg:#FDEFF3;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+  margin:0;padding:18px 16px 40px;background:var(--paper);color:var(--ink);
+  font:16px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  max-width:640px;margin:0 auto;
+}
+h1{font-size:22px;margin:6px 0 2px;letter-spacing:1px}
+.sub{color:var(--soft);font-size:13px;margin-bottom:18px}
+label{display:block;font-size:13px;color:var(--soft);margin:16px 0 6px}
+input[type=text]{
+  width:100%;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px;
+  background:var(--cream);font-size:16px;color:var(--ink);font-family:inherit;
+}
+input[type=text]:focus{outline:none;border-color:var(--pink)}
+.spreads{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+.sp{
+  padding:11px 10px;border:1.5px solid var(--line);border-radius:14px;
+  background:var(--cream);text-align:center;font-size:14px;cursor:pointer;
+}
+.sp.on{border-color:var(--pink);background:var(--pinkbg);color:#C4486F;font-weight:600}
+.sp small{display:block;font-size:11px;color:var(--soft);font-weight:400;margin-top:2px}
+.row{display:flex;gap:10px;margin-top:20px}
+button{
+  flex:1;padding:15px;border:none;border-radius:16px;font-size:16px;font-family:inherit;
+  cursor:pointer;font-weight:600;
+}
+#draw{background:var(--coral);color:#fff}
+#copy{background:var(--cream);color:var(--ink);border:1.5px solid var(--line)}
+button:active{transform:scale(.985)}
+#out{margin-top:22px;display:none}
+.cardrow{
+  display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid var(--line);
+  border-radius:16px;background:var(--cream);margin-bottom:8px;
+}
+.cardrow .idx{
+  width:26px;height:26px;border-radius:50%;background:var(--pinkbg);color:#C4486F;
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto
+}
+.cardrow .nm{font-weight:600}
+.cardrow .pos{font-size:12px;color:var(--soft)}
+.cardrow .rev{margin-left:auto;font-size:12px;color:var(--coral)}
+pre{
+  white-space:pre-wrap;word-wrap:break-word;background:var(--cream);
+  border:1.5px solid var(--line);border-radius:16px;padding:16px;
+  font:14.5px/1.75 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);
+  margin:0
+}
+.hint{font-size:12px;color:var(--soft);margin-top:10px;line-height:1.6}
+.toast{
+  position:fixed;left:50%;bottom:34px;transform:translateX(-50%);
+  background:#6B4F3A;color:#fff;padding:11px 20px;border-radius:20px;font-size:14px;
+  opacity:0;transition:.25s;pointer-events:none
+}
+.toast.on{opacity:1}
+
+.cfg{
+  background:var(--cream);border:1.5px solid var(--line);border-radius:16px;
+  padding:12px 14px;margin:4px 0 6px
+}
+.cfg summary{font-size:14px;color:var(--soft);cursor:pointer;list-style:none}
+.cfg summary::-webkit-details-marker{display:none}
+.cfg[open] summary{margin-bottom:6px}
+#gen{
+  background:var(--pink);color:#fff;margin-top:12px;display:none
+}
+#gen.on{display:block}
+.spin{display:inline-block;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<h1>塔罗解读生成器</h1>
+<div class="sub">输入提问 → 抽牌 → 生成解读 → 复制发给客户</div>
+
+<details class="cfg" id="cfg">
+  <summary>⚙️ AI 设置（第一次用要填一次）</summary>
+  <label>DeepSeek API Key</label>
+  <input id="key" type="password" placeholder="sk-...（在 platform.deepseek.com 创建）">
+  <div class="row" style="margin-top:10px">
+    <button id="savekey" style="padding:11px;font-size:14px">保存</button>
+  </div>
+  <div class="hint">Key 只存在你这台手机的浏览器里，不会上传。填完一次，以后自动用。</div>
+</details>
+
+<label>客户的提问</label>
+<input id="q" type="text" placeholder="例如：最近工作状态很差，想调整但不知道从哪下手">
+
+<label>牌阵</label>
+<div class="spreads" id="spreads"></div>
+
+<div class="row">
+  <button id="draw">抽 牌</button>
+  <button id="copy">复制解读</button>
+</div>
+
+<div id="out">
+  <div id="cards" style="margin-top:20px"></div>
+  <button id="gen">✨ AI 生成解读</button>
+  <pre id="text"></pre>
+  <div class="hint" id="hint"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DATA = {"cards":{"maj-00":{"name":"愚者","up":["新的开始","冒险","纯真","无限可能"],"rev":["鲁莽","准备不足","逃避现实","原地空转"]},"maj-01":{"name":"魔术师","up":["行动力","资源齐备","创造","表达"],"rev":["眼高手低","资源错置","话术大于实作"]},"maj-02":{"name":"女祭司","up":["直觉","潜意识","静观","尚未揭晓的答案"],"rev":["忽略直觉","资讯不透明","压抑感受"]},"maj-03":{"name":"皇后","up":["丰盛","滋养","创造力","感官享受"],"rev":["过度依赖","停滞","耗竭"]},"maj-04":{"name":"皇帝","up":["秩序","权威","结构","纪律"],"rev":["僵化","控制欲","独断"]},"maj-05":{"name":"教皇","up":["传统","学习","制度","前人指引"],"rev":["墨守成规","反体制","形式主义"]},"maj-06":{"name":"恋人","up":["选择","结合","价值观一致","吸引"],"rev":["犹豫不决","价值冲突","诱惑"]},"maj-07":{"name":"战车","up":["意志力","前进","胜利","掌控方向"],"rev":["失控","方向不明","硬撑"]},"maj-08":{"name":"力量","up":["勇气","温柔的坚持","内在力量","耐心"],"rev":["自我怀疑","急躁","力气用尽"]},"maj-09":{"name":"隐者","up":["内省","独处","求真","寻找导师"],"rev":["孤立","过度封闭","拖延"]},"maj-10":{"name":"命运之轮","up":["转机","循环","时机到了","意外之喜"],"rev":["坏循环","抗拒改变","时机未到"]},"maj-11":{"name":"正义","up":["公平","因果","诚实","平衡"],"rev":["偏颇","逃避责任","失衡"]},"maj-12":{"name":"倒吊人","up":["换角度","暂停","值得的等待","牺牲"],"rev":["无谓的牺牲","卡住","抗拒改变"]},"maj-13":{"name":"死神","up":["结束","转化","断舍离","重生"],"rev":["拖延结束","抗拒放手","余烬未熄"]},"maj-14":{"name":"节制","up":["平衡","调和","节奏","耐心配比"],"rev":["失衡","过与不及","混乱拼凑"]},"maj-15":{"name":"恶魔","up":["欲望","束缚","依赖","阴影面"],"rev":["挣脱","觉察","解除绑定"]},"maj-16":{"name":"高塔","up":["突发剧变","崩塌","真相揭露","被迫重建"],"rev":["延后的崩塌","勉强撑住","内部瓦解"]},"maj-17":{"name":"星星","up":["希望","疗愈","灵感","指引"],"rev":["失望","信心不足","迷失方向"]},"maj-18":{"name":"月亮","up":["不确定","幻象","潜藏的恐惧","看不清"],"rev":["迷雾散去","真相浮现","恐惧消退"]},"maj-19":{"name":"太阳","up":["成功","喜悦","清晰","活力"],"rev":["短暂低潮","过度乐观","光芒被遮"]},"maj-20":{"name":"审判","up":["觉醒","总结","召唤","重新评估"],"rev":["自我批判","逃避检视","迟迟不决"]},"maj-21":{"name":"世界","up":["完成","圆满","整合","里程碑"],"rev":["差临门一脚","收尾拖延","未竟之事"]},"wan-01":{"name":"权杖一","up":["灵感","新机会","冲劲","火花"],"rev":["动力不足","起步受阻","点子夭折"]},"wan-02":{"name":"权杖二","up":["规划","展望","抉择","掌握全局"],"rev":["犹豫","视野狭窄","计划落空"]},"wan-03":{"name":"权杖三","up":["拓展","等待成果","远见","布局中"],"rev":["延迟","短视","回报未到"]},"wan-04":{"name":"权杖四","up":["庆祝","稳定","归属感","阶段完成"],"rev":["不安定","庆祝延后","根基未稳"]},"wan-05":{"name":"权杖五","up":["竞争","摩擦","各说各话","有价值的磨练"],"rev":["逃避冲突","内耗","表面和平"]},"wan-06":{"name":"权杖六","up":["胜利","被认可","好消息","自信"],"rev":["认可落空","自满","得失心重"]},"wan-07":{"name":"权杖七","up":["防守","坚持立场","捍卫成果"],"rev":["疲于防守","节节让步","撑不住"]},"wan-08":{"name":"权杖八","up":["快速进展","讯息涌入","加速","一路绿灯"],"rev":["延误","讯息混乱","节奏被打断"]},"wan-09":{"name":"权杖九","up":["韧性","最后防线","警戒","撑到现在"],"rev":["耗尽","偏执","防备过度"]},"wan-10":{"name":"权杖十","up":["负担","责任过重","硬扛"],"rev":["放下","分担","终于卸下"]},"wan-11":{"name":"权杖侍者","up":["好奇","探索","新的学习","跃跃欲试"],"rev":["三分钟热度","分心","光说不练"]},"wan-12":{"name":"权杖骑士","up":["行动","热情","大胆推进","说走就走"],"rev":["鲁莽","半途而废","冲过头"]},"wan-13":{"name":"权杖王后","up":["自信","魅力","热力","感染力"],"rev":["自我怀疑","比较心","光环褪色"]},"wan-14":{"name":"权杖国王","up":["领导","愿景","掌舵","说到做到"],"rev":["专断","冲动决策","只出一张嘴"]},"cup-01":{"name":"圣杯一","up":["情感的开始","爱意流动","被打开的心","新的连结"],"rev":["情感封闭","失落","空杯"]},"cup-02":{"name":"圣杯二","up":["结合","互相","伙伴关系","彼此吸引"],"rev":["失衡","误解","单方付出"]},"cup-03":{"name":"圣杯三","up":["友谊","庆祝","社群","共享的快乐"],"rev":["社交疲乏","小圈圈","热闹过后"]},"cup-04":{"name":"圣杯四","up":["倦怠","无感","错过眼前的机会"],"rev":["重新振作","接受邀请","兴趣回来"]},"cup-05":{"name":"圣杯五","up":["失落","遗憾","只看见失去的"],"rev":["接受","转头看见剩下的","开始复原"]},"cup-06":{"name":"圣杯六","up":["怀旧","童心","旧识重逢","纯粹的善意"],"rev":["困在过去","美化回忆","长不大"]},"cup-07":{"name":"圣杯七","up":["选择过多","幻想","眼花撩乱","看不清真假"],"rev":["聚焦","认清现实","做出决定"]},"cup-08":{"name":"圣杯八","up":["离开","追寻更深的东西","主动放下"],"rev":["徘徊","不甘心","想走又留"]},"cup-09":{"name":"圣杯九","up":["满足","愿望成真","享受当下"],"rev":["空虚","表面满足","许错愿"]},"cup-10":{"name":"圣杯十","up":["圆满","家庭和乐","情感丰盈","理想实现"],"rev":["关系裂痕","理想落差","貌合神离"]},"cup-11":{"name":"圣杯侍者","up":["敏感","灵感","纯真的情感","意外的讯息"],"rev":["情绪化","不成熟","逃进幻想"]},"cup-12":{"name":"圣杯骑士","up":["浪漫","跟随内心","提案","感性行动"],"rev":["不切实际","善变","空头支票"]},"cup-13":{"name":"圣杯王后","up":["同理","照顾","情感智慧","温柔的力量"],"rev":["过度付出","被情绪淹没","界线模糊"]},"cup-14":{"name":"圣杯国王","up":["情绪稳定","成熟","包容","沉得住气"],"rev":["压抑","情绪操控","表面平静"]},"swo-01":{"name":"宝剑一","up":["清晰","突破","真相","一针见血"],"rev":["混乱","误判","资讯不足"]},"swo-02":{"name":"宝剑二","up":["僵局","回避决定","暂时的平衡"],"rev":["打破僵局","资讯到位","被迫选边"]},"swo-03":{"name":"宝剑三","up":["伤心","刺痛的真相","分离"],"rev":["疗愈中","释怀","痛感减退"]},"swo-04":{"name":"宝剑四","up":["休息","恢复","暂停","退一步"],"rev":["该起身了","休息不足","强迫自己动"]},"swo-05":{"name":"宝剑五","up":["惨胜","冲突","赢了面子输了里子"],"rev":["和解","放下输赢","认错"]},"swo-06":{"name":"宝剑六","up":["过渡","远离风暴","逐渐好转"],"rev":["难以放下","卡在原地","迁移受阻"]},"swo-07":{"name":"宝剑七","up":["策略","迂回","取巧","有所隐瞒"],"rev":["坦白","被拆穿","改走正道"]},"swo-08":{"name":"宝剑八","up":["受限","自我设限","无力感"],"rev":["松绑","看见出路","自己解开"]},"swo-09":{"name":"宝剑九","up":["焦虑","失眠","想太多","半夜的恐惧"],"rev":["焦虑缓解","说出口","没那么糟"]},"swo-10":{"name":"宝剑十","up":["谷底","结束","认栽","痛快的了结"],"rev":["复原","触底反弹","劫后余生"]},"swo-11":{"name":"宝剑侍者","up":["好奇","观察","求知","打探消息"],"rev":["多疑","心急","断章取义"]},"swo-12":{"name":"宝剑骑士","up":["果断","直冲","效率","说做就做"],"rev":["冲动","攻击性","横冲直撞"]},"swo-13":{"name":"宝剑王后","up":["理性","清晰的界线","独立","看穿本质"],"rev":["冷漠","尖锐","过度防备"]},"swo-14":{"name":"宝剑国王","up":["判断力","原则","专业权威","冷静决断"],"rev":["滥用权威","教条","只讲道理不讲人"]},"pen-01":{"name":"钱币一","up":["新机会","实质收获","种子落地"],"rev":["错失机会","短视","根基不稳"]},"pen-02":{"name":"钱币二","up":["平衡","多工","弹性应变"],"rev":["蜡烛两头烧","失衡","顾此失彼"]},"pen-03":{"name":"钱币三","up":["协作","专业累积","被认可的手艺"],"rev":["各做各的","品质妥协","分工不清"]},"pen-04":{"name":"钱币四","up":["保守","累积","抓紧不放","安全感"],"rev":["松手","过度囤积","不敢投资"]},"pen-05":{"name":"钱币五","up":["匮乏","困难","被排除在外"],"rev":["援助出现","走出困境","找到门"]},"pen-06":{"name":"钱币六","up":["给予与接受","资源流动","慷慨"],"rev":["施受不均","附带条件","过度依赖"]},"pen-07":{"name":"钱币七","up":["耐心等待","评估投资","还在长"],"rev":["收成不如预期","没耐心","投错地方"]},"pen-08":{"name":"钱币八","up":["精进","刻意练习","专注工艺"],"rev":["敷衍","重复而无成长","只是劳动"]},"pen-09":{"name":"钱币九","up":["自给自足","享受成果","独立优雅"],"rev":["过度工作","依赖他人","忘了享受"]},"pen-10":{"name":"钱币十","up":["长期富足","传承","家族与根基"],"rev":["短期思维","财务压力","根基动摇"]},"pen-11":{"name":"钱币侍者","up":["学习","务实起步","新技能"],"rev":["拖延","眼高手低","纸上谈兵"]},"pen-12":{"name":"钱币骑士","up":["稳扎稳打","可靠","慢工出细活"],"rev":["停滞","过度谨慎","无聊到放弃"]},"pen-13":{"name":"钱币王后","up":["务实照顾","资源管理","把日子过好"],"rev":["过劳","顾此失彼","忽略自己"]},"pen-14":{"name":"钱币国王","up":["富足","掌握资源","事业有成","稳固"],"rev":["贪婪","过度物质","守成不前"]}},"spreads":{"single":{"name":"单张指引","desc":"一张牌，直球回答。适合快速提问。","positions":["核心讯息"]},"three":{"name":"时序三张","desc":"过去 → 现在 → 未来，看事情的来龙去脉。","positions":["过去 / 起因","现在 / 现况","未来 / 走向"]},"action":{"name":"行动三张","desc":"现况 → 该做什么 → 会怎样，适合要做决定的时候。","positions":["目前的处境","建议采取的行动","可能的结果"]},"love":{"name":"关系三张","desc":"你、对方、关系的走向。","positions":["你的状态","对方的状态","关系的走向"]},"career":{"name":"工作事业四张","desc":"处境、助力、阻力、方向。","positions":["目前的处境","隐藏的助力","需要注意的地方","接下来的方向"]},"cross":{"name":"五张小十字","desc":"最完整的常用牌阵，适合认真想厘清的事。","positions":["现况","阻碍 / 挑战","根源 / 潜意识","建议","可能的结果"]}},"suits":{"wands":{"name":"权杖","element":"火"},"cups":{"name":"圣杯","element":"水"},"swords":{"name":"宝剑","element":"风"},"pentacles":{"name":"钱币","element":"土"}},"arcana":{"maj-00":{"arcana":"major","suit":null},"maj-01":{"arcana":"major","suit":null},"maj-02":{"arcana":"major","suit":null},"maj-03":{"arcana":"major","suit":null},"maj-04":{"arcana":"major","suit":null},"maj-05":{"arcana":"major","suit":null},"maj-06":{"arcana":"major","suit":null},"maj-07":{"arcana":"major","suit":null},"maj-08":{"arcana":"major","suit":null},"maj-09":{"arcana":"major","suit":null},"maj-10":{"arcana":"major","suit":null},"maj-11":{"arcana":"major","suit":null},"maj-12":{"arcana":"major","suit":null},"maj-13":{"arcana":"major","suit":null},"maj-14":{"arcana":"major","suit":null},"maj-15":{"arcana":"major","suit":null},"maj-16":{"arcana":"major","suit":null},"maj-17":{"arcana":"major","suit":null},"maj-18":{"arcana":"major","suit":null},"maj-19":{"arcana":"major","suit":null},"maj-20":{"arcana":"major","suit":null},"maj-21":{"arcana":"major","suit":null},"wan-01":{"arcana":"minor","suit":"wands"},"wan-02":{"arcana":"minor","suit":"wands"},"wan-03":{"arcana":"minor","suit":"wands"},"wan-04":{"arcana":"minor","suit":"wands"},"wan-05":{"arcana":"minor","suit":"wands"},"wan-06":{"arcana":"minor","suit":"wands"},"wan-07":{"arcana":"minor","suit":"wands"},"wan-08":{"arcana":"minor","suit":"wands"},"wan-09":{"arcana":"minor","suit":"wands"},"wan-10":{"arcana":"minor","suit":"wands"},"wan-11":{"arcana":"minor","suit":"wands"},"wan-12":{"arcana":"minor","suit":"wands"},"wan-13":{"arcana":"minor","suit":"wands"},"wan-14":{"arcana":"minor","suit":"wands"},"cup-01":{"arcana":"minor","suit":"cups"},"cup-02":{"arcana":"minor","suit":"cups"},"cup-03":{"arcana":"minor","suit":"cups"},"cup-04":{"arcana":"minor","suit":"cups"},"cup-05":{"arcana":"minor","suit":"cups"},"cup-06":{"arcana":"minor","suit":"cups"},"cup-07":{"arcana":"minor","suit":"cups"},"cup-08":{"arcana":"minor","suit":"cups"},"cup-09":{"arcana":"minor","suit":"cups"},"cup-10":{"arcana":"minor","suit":"cups"},"cup-11":{"arcana":"minor","suit":"cups"},"cup-12":{"arcana":"minor","suit":"cups"},"cup-13":{"arcana":"minor","suit":"cups"},"cup-14":{"arcana":"minor","suit":"cups"},"swo-01":{"arcana":"minor","suit":"swords"},"swo-02":{"arcana":"minor","suit":"swords"},"swo-03":{"arcana":"minor","suit":"swords"},"swo-04":{"arcana":"minor","suit":"swords"},"swo-05":{"arcana":"minor","suit":"swords"},"swo-06":{"arcana":"minor","suit":"swords"},"swo-07":{"arcana":"minor","suit":"swords"},"swo-08":{"arcana":"minor","suit":"swords"},"swo-09":{"arcana":"minor","suit":"swords"},"swo-10":{"arcana":"minor","suit":"swords"},"swo-11":{"arcana":"minor","suit":"swords"},"swo-12":{"arcana":"minor","suit":"swords"},"swo-13":{"arcana":"minor","suit":"swords"},"swo-14":{"arcana":"minor","suit":"swords"},"pen-01":{"arcana":"minor","suit":"pentacles"},"pen-02":{"arcana":"minor","suit":"pentacles"},"pen-03":{"arcana":"minor","suit":"pentacles"},"pen-04":{"arcana":"minor","suit":"pentacles"},"pen-05":{"arcana":"minor","suit":"pentacles"},"pen-06":{"arcana":"minor","suit":"pentacles"},"pen-07":{"arcana":"minor","suit":"pentacles"},"pen-08":{"arcana":"minor","suit":"pentacles"},"pen-09":{"arcana":"minor","suit":"pentacles"},"pen-10":{"arcana":"minor","suit":"pentacles"},"pen-11":{"arcana":"minor","suit":"pentacles"},"pen-12":{"arcana":"minor","suit":"pentacles"},"pen-13":{"arcana":"minor","suit":"pentacles"},"pen-14":{"arcana":"minor","suit":"pentacles"}}};
+const POS_POOL = Object.keys(DATA.spreads);
+
+let cur = null;
+
+/* ---------- 渲染牌阵选择 ---------- */
+const spBox = document.getElementById('spreads');
+POS_POOL.forEach((k,i)=>{
+  const d = DATA.spreads[k];
+  const el = document.createElement('div');
+  el.className = 'sp' + (i===1?' on':'');
+  el.dataset.k = k;
+  el.innerHTML = `${d.name}<small>${d.positions.length} 张</small>`;
+  el.onclick = ()=>{
+    document.querySelectorAll('.sp').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on');
+  };
+  spBox.appendChild(el);
+});
+
+/* ---------- 可复现随机 ---------- */
+function lcg(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function shuffle(arr, rnd){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(rnd()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+function drawCards(n, seed){
+  const rnd = lcg(seed);
+  const ids = Object.keys(DATA.cards);
+  const picked = shuffle(ids, rnd).slice(0,n);
+  return picked.map(id=>({
+    id,
+    reversed: rnd() < 0.42
+  }));
+}
+
+/* ---------- 解读生成 ---------- */
+const POS_FRAME = {
+  '核心讯息': '这张牌给出的核心是',
+  '过去 / 起因': '事情的起点在这张牌上——',
+  '现在 / 现况': '你此刻的处境是',
+  '未来 / 走向': '如果照现在的节奏走，倾向是',
+  '目前的处境': '你现在的位置是',
+  '建议采取的行动': '牌给的建议很直接——',
+  '可能的结果': '走下去的倾向是',
+  '你的状态': '你这边现在处于',
+  '对方的状态': '对方那边处于',
+  '关系的走向': '关系目前的走向是',
+  '隐藏的助力': '你还没用上的助力是',
+  '需要注意的地方': '要留意的是',
+  '接下来的方向': '接下来该往这里走——',
+  '现状': '你此刻的处境是',
+  '阻碍 / 挑战': '卡住你的是',
+  '根源 / 潜意识': '更底层的原因是',
+  '建议': '牌给的建议是',
+};
+
+function kwList(card, rev){
+  return (rev ? card.rev : card.up) || [];
+}
+
+function hash(s){ let h=0; for(const ch of s) h=(h*31+ch.charCodeAt(0))>>>0; return h; }
+function pick(arr, key){ return arr[hash(key)%arr.length]; }
+
+const ORIENT_UP = [
+  '牌是正的，这股劲儿现在推得动。',
+  '正位的能量是舒展的，可以顺着它走。',
+  '这张牌立着，说明这一块眼下没有卡死。'
+];
+const ORIENT_REV = [
+  '逆位不是坏事，只是这股劲儿还没走顺——可能压在心里，也可能用错了力道。',
+  '牌倒着，说明这一块先别硬推，看清楚它卡在哪儿更要紧。',
+  '逆位更像「还没到位」：方向也许没错，是时机或力道不对。'
+];
+const TAIL = ['另一面是', '也连着', '旁边还有'];
+
+function composeCard(cardId, rev, position, idx){
+  const c = DATA.cards[cardId];
+  const kws = kwList(c, rev);
+  const k1 = kws[0] || '';
+  const k2 = kws[1] || '';
+  const frame = POS_FRAME[position] || '这张牌说的是';
+  const orient = rev ? '逆位' : '正位';
+
+  const line1 = `${frame}「${k1}${k2 ? '、' + k2 : ''}」。`;
+  const line2 = (rev ? ORIENT_REV : ORIENT_UP)[idx % 3];
+
+  let line3 = '';
+  const rest = kws.slice(2,4);
+  if(rest.length){
+    line3 = `${TAIL[idx % TAIL.length]}「${rest.join('、')}」，可以一起看。`;
+  }
+  return `${'①②③④⑤'[idx] || (idx+1)} ${c.name}（${orient}）｜${position}\n${line1}${line2}${line3}`;
+}
+
+function elementStats(drawn){
+  const count = {};
+  let major = 0, revN = 0;
+  drawn.forEach(d=>{
+    const a = DATA.arcana[d.id];
+    if(a.arcana === 'major'){ major++; }
+    else {
+      const el = DATA.suits[a.suit].element;
+      count[el] = (count[el]||0)+1;
+    }
+    if(d.reversed) revN++;
+  });
+  return {count, major, revN};
+}
+
+function buildReading(question, spreadKey, drawn, seed){
+  const sp = DATA.spreads[spreadKey];
+  const now = new Date();
+  const ts = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+    +' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+
+  let out = '';
+  out += `【塔罗${sp.name}解读】\n`;
+  if(question) out += `提问：${question}\n`;
+  out += `牌阵：${sp.name}（${sp.positions.join(' → ')}）\n`;
+  out += `抽牌存档：seed ${seed} · ${ts}\n`;
+  out += `这个 seed 你随时可以复查，牌面不会变。\n\n`;
+
+  out += `── 牌面 ──\n`;
+  drawn.forEach((d,i)=>{
+    out += `${i+1}. ${sp.positions[i]} —— ${DATA.cards[d.id].name} · ${d.reversed?'逆位':'正位'}\n`;
+  });
+  out += `\n`;
+
+  out += `── 逐张 ──\n`;
+  drawn.forEach((d,i)=>{
+    out += composeCard(d.id, d.reversed, sp.positions[i], i) + `\n\n`;
+  });
+
+  const st = elementStats(drawn);
+  const elParts = Object.entries(st.count).map(([k,v])=>`${k} ${v}`).join(' · ');
+  out += `── 整体 ──\n`;
+  if(elParts) out += `元素：${elParts}\n`;
+  out += `大牌 ${st.major}/${drawn.length}`;
+  if(st.major === 0) out += `（日常选择主导，主动权在你手上）`;
+  else if(st.major >= drawn.length/2) out += `（大牌偏多，这确实是个转折点）`;
+  else out += `（命运和选择各占一半）`;
+  out += `\n`;
+  out += `逆位 ${st.revN}/${drawn.length}`;
+  if(st.revN > drawn.length/2) out += `（现在更多是在收，不急着推）`;
+  else out += `（推的和收的都有）`;
+  out += `\n\n`;
+
+  out += `── 怎么看 ──\n`;
+  if(st.revN > drawn.length/2){
+    out += `这几张里逆位偏多，说明你现在不太是在“往外做”，更像是在“往里收”。这时候硬推反而更累，先把卡住的那一处说清楚，比急着改变有用。\n\n`;
+  }else{
+    out += `牌面正逆都有，说明有能推的地方，也有要缓的地方。先从推得动的那一块下手，别一次全动。\n\n`;
+  }
+
+  out += `── 这周可以做的一件事 ──\n`;
+  const advIdx = sp.positions.findIndex(p=>p.includes('建议'));
+  const adviceCard = advIdx >= 0 ? drawn[advIdx] : drawn[drawn.length-1];
+  const akws = kwList(DATA.cards[adviceCard.id], adviceCard.reversed);
+  if(adviceCard.reversed){
+    out += `建议这一张是逆位，意思是别再往「${akws[0]}」这个方向加码了——反着来：这周挑一件具体的事，把「${akws[0]}」先停一停，看看会发生什么。\n\n`;
+  }else{
+    out += `顺着「${akws[0]}」这个方向，挑一件 30 分钟内能开头的小事，本周内做掉。不用一次想清楚，先把脚迈出去。\n\n`;
+  }
+
+  out += `——\n`;
+  out += `塔罗反映的是当下的状态，不是对未来的预测。\n`;
+  out += `牌面只负责把你在回避的那部分翻出来；走向怎么变，是你的选择决定的。\n`;
+
+  return out;
+}
+
+/* ---------- 交互 ---------- */
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  setTimeout(()=>t.classList.remove('on'), 1600);
+}
+
+document.getElementById('draw').onclick = ()=>{
+  const q = document.getElementById('q').value.trim();
+  const sk = document.querySelector('.sp.on').dataset.k;
+  const sp = DATA.spreads[sk];
+  const seed = Math.floor(Math.random()*1e9);
+  const drawn = drawCards(sp.positions.length, seed);
+
+  cur = {q, sk, drawn, seed};
+
+  const box = document.getElementById('cards');
+  box.innerHTML = '';
+  drawn.forEach((d,i)=>{
+    const el = document.createElement('div');
+    el.className = 'cardrow';
+    el.innerHTML = `<div class="idx">${i+1}</div>
+      <div><div class="nm">${DATA.cards[d.id].name}</div>
+      <div class="pos">${sp.positions[i]}</div></div>
+      <div class="rev">${d.reversed?'逆位':'正位'}</div>`;
+    box.appendChild(el);
+  });
+
+  document.getElementById('text').textContent = buildReading(q, sk, drawn, seed);
+  document.getElementById('out').style.display = 'block';
+  document.getElementById('out').scrollIntoView({behavior:'smooth', block:'start'});
+
+  if(typeof getKey === 'function' && getKey()){
+    doAiRead();
+  }else{
+    document.getElementById('hint').textContent =
+      '上面是模板速读。正式版要点「✨ AI 生成解读」——先去最上面「⚙️ AI 设置」填一次 Key。';
+  }
+};
+
+/* ---------- AI 解读 ---------- */
+const KEY_NAME = 'ds_key';
+const getKey = ()=> localStorage.getItem(KEY_NAME) || '';
+
+function syncGen(){
+  const has = !!getKey();
+  document.getElementById('gen').classList.toggle('on', has);
+  if(!has) document.getElementById('cfg').open = true;
+}
+document.getElementById('savekey').onclick = ()=>{
+  const v = document.getElementById('key').value.trim();
+  if(!v){ toast('请先填入 Key'); return; }
+  localStorage.setItem(KEY_NAME, v);
+  toast('已保存');
+  syncGen();
+};
+if(localStorage.getItem(KEY_NAME)) document.getElementById('key').value = '';
+syncGen();
+
+const SYS_PROMPT = `你是一位塔罗解读师，要给一位付费客户写一份正式解读。
+
+这不是占卜报告，是一封信。用叙事的方式写，像你坐在他对面，慢慢把这件事讲给他听。
+
+客户会告诉你他的问题，以及已经抽好的牌（牌名、正逆位、位置）。这些牌是既定结果，你不能改动、不能重抽、不能换成别的牌。
+
+写作要求：
+1. 第一句直接进入他的处境。不要"你好""很高兴为你解读"这类客套，不要报幕，不要复述牌名和位置。
+2. 全文是一篇连贯的记叙文，600–900 字，分成 4–6 个自然段，每段 3–5 句。
+   不要小标题，不要分点，不要列关键词，不要用「牌面」「逐张」「整体」这类结构词。
+3. 把抽到的牌自然织进叙述里。可以提牌名，但全文只提一两次，重点永远是他这个人，不是牌。
+   不要写"圣杯五代表失落"，要写"你现在的样子，像一直盯着打翻的那几只杯子，身后的两只你没看"。
+4. 要有画面感和具体场景，让他读着觉得"这说的就是我"。多用白描，少用形容词。
+5. 语气温柔但清醒。不哄，也不说教。像朋友，不像大师。
+6. 最后一段落到一件这周能做的具体小事，要具体到能立刻执行。
+7. 不出现"能量场""业力""高频""磁场""注定""宇宙"这类词。
+
+红线（必须遵守）：
+- 不说"你一定会""注定""必然"
+- 不预测灾祸、疾病、死亡、婚姻成败、考试或工作结果
+- 不推销化解、转运、开光、法事、符咒、水晶
+- 不承诺任何结果
+
+遇到禁区话题怎么处理（不要生硬拒绝，要转个弯）：
+- 股票、基金、投资亏损 → 不给任何买卖、加仓、止损建议；转到他此刻的情绪和决策习惯上，
+  比如"现在让你难受的是亏钱本身，还是当初那个决定的自己"
+- 健康、疾病 → 不给诊断和建议，建议就医，然后聊他的焦虑
+- 法律纠纷、官司 → 不判断输赢，聊他现在的处境和能做的准备
+- "会不会复合""什么时候能遇到" → 不给时间点和答案，帮他看清自己真正想要什么
+
+输出纯文本，不要用 Markdown 的 # 号标题。`;
+
+function headerOf(q, sp, drawn, seed){
+  const now = new Date();
+  const ts = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')
+    +' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  let h = `【塔罗解读】\n`;
+  if(q) h += `提问：${q}\n`;
+  h += `牌阵：${sp.name}\n`;
+  h += `抽牌存档：seed ${seed} · ${ts}\n\n`;
+  drawn.forEach((d,i)=>{
+    h += `${i+1}. ${sp.positions[i]} —— ${DATA.cards[d.id].name} · ${d.reversed?'逆位':'正位'}\n`;
+  });
+  return h;
+}
+
+async function doAiRead(){
+  if(!cur){ toast('先抽牌'); return; }
+  const k = getKey();
+  if(!k){ toast('先填 API Key'); return; }
+  const btn = document.getElementById('gen');
+  const sp = DATA.spreads[cur.sk];
+  const {q, drawn, seed} = cur;
+
+  const cardLines = drawn.map((d,i)=>
+    `${i+1}. 位置：${sp.positions[i]}　牌：${DATA.cards[d.id].name}　${d.reversed?'逆位':'正位'}`);
+  const userMsg = `客户的问题：${q || '（没有具体问题，做整体解读）'}\n\n已抽好的牌（既定结果，不要改动）：\n${cardLines.join('\n')}\n\n请写解读。`;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">◌</span> 生成中…';
+  try{
+    const r = await fetch('https://api.deepseek.com/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+k},
+      body: JSON.stringify({
+        model:'deepseek-chat',
+        messages:[{role:'system',content:SYS_PROMPT},{role:'user',content:userMsg}],
+        temperature:0.8,
+        max_tokens:2000
+      })
+    });
+    if(!r.ok){
+      const t = await r.text();
+      throw new Error('HTTP '+r.status+' '+t.slice(0,120));
+    }
+    const j = await r.json();
+    const body = (j.choices?.[0]?.message?.content || '').trim();
+    if(!body) throw new Error('返回为空');
+
+    document.getElementById('text').textContent =
+      body +
+      '\n\n——\n' +
+      `本次抽牌存档：seed ${seed}，牌面可复查。\n` +
+      '塔罗反映的是当下的状态，不是对未来的预测。';
+    document.getElementById('hint').textContent =
+      `已生成 ${body.length} 字。客户问"是不是编的"，把 seed ${seed} 给他。`;
+  }catch(e){
+    document.getElementById('text').textContent = buildReading(q, cur.sk, drawn, seed);
+    document.getElementById('hint').textContent =
+      'AI 调用失败：' + e.message + '　已回退到模板解读。检查 Key 是否正确、余额是否够。';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '✨ AI 生成解读';
+  }
+}
+document.getElementById('gen').onclick = doAiRead;
+
+document.getElementById('copy').onclick = async ()=>{
+  if(!cur){ toast('先抽牌'); return; }
+  const txt = document.getElementById('text').textContent;
+  try{
+    await navigator.clipboard.writeText(txt);
+    toast('已复制');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+    toast('已复制');
+  }
+};
+</script>
+</body>
+</html>
