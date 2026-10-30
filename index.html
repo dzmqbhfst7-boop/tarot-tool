@@ -484,136 +484,244 @@ function wrapLines(ctx, text, maxW){
 }
 
 /* 木纹桌面底 */
-function paintTable(g, W, H, seed){
-  let s = (seed>>>0) || 1;
-  const rnd = ()=> (s = (s*1664525 + 1013904223)>>>0) / 4294967296;
+/* 可复现随机 */
+function mulberry(seed){
+  let t = seed >>> 0;
+  return function(){
+    t = (t + 0x6D2B79F5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-  const grad = g.createLinearGradient(0,0,W*0.4,H);
-  grad.addColorStop(0,'#4A3A2E');
-  grad.addColorStop(0.5,'#3B2D24');
-  grad.addColorStop(1,'#2E231C');
-  g.fillStyle=grad; g.fillRect(0,0,W,H);
+/* 四种场景，每次抽牌随机挑一个 */
+const SCENES = {
+  wood:  { paper:'#EFE7D9', ink:'#3B2E24', sub:'rgba(80,64,50,.72)', name:'深木桌' },
+  linen: { paper:'#F3EDE2', ink:'#3E332A', sub:'rgba(90,74,60,.72)', name:'亚麻布' },
+  felt:  { paper:'#EAE4D6', ink:'#33302A', sub:'rgba(80,74,64,.72)', name:'墨绿绒' },
+  stone: { paper:'#F6F2EA', ink:'#40372E', sub:'rgba(95,80,66,.72)', name:'米石' }
+};
 
-  // 木纹
-  for(let i=0;i<160;i++){
-    const y = rnd()*H;
-    const alpha = 0.02 + rnd()*0.05;
-    g.beginPath();
-    g.moveTo(0, y);
-    let cy = y;
-    for(let x=0;x<=W;x+=60){
-      cy += (rnd()-0.5)*7;
-      g.lineTo(x, cy);
+function bgWood(g, W, H, rnd){
+  const grad = g.createLinearGradient(0, 0, W * .35, H);
+  grad.addColorStop(0, '#4E3C2E'); grad.addColorStop(.45, '#3D2E23'); grad.addColorStop(1, '#2A1F18');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 150; i++){
+    const y0 = rnd() * H, a = .015 + rnd() * .055;
+    g.beginPath(); g.moveTo(0, y0);
+    let cy = y0;
+    for (let x = 0; x <= W; x += 55){ cy += (rnd() - .5) * 8; g.lineTo(x, cy); }
+    g.strokeStyle = rnd() > .45 ? `rgba(255,228,196,${a})` : `rgba(0,0,0,${a + .03})`;
+    g.lineWidth = .5 + rnd() * 2.4; g.stroke();
+  }
+  for (let k = 0; k < 2 + Math.floor(rnd() * 2); k++){
+    const kx = rnd() * W, ky = rnd() * H, kr = 6 + rnd() * 14;
+    for (let ring = 0; ring < 5; ring++){
+      g.beginPath();
+      g.ellipse(kx, ky, kr * (1 + ring * .55) * .45, kr * (1 + ring * .55), rnd() * 3, 0, 7);
+      g.strokeStyle = `rgba(0,0,0,${.05 + rnd() * .05})`; g.lineWidth = 1.2; g.stroke();
     }
-    g.strokeStyle = rnd()>0.45 ? `rgba(255,225,190,${alpha})` : `rgba(0,0,0,${alpha+0.03})`;
-    g.lineWidth = 0.6 + rnd()*2.2;
-    g.stroke();
   }
+}
 
-  // 颗粒
-  for(let i=0;i<5200;i++){
-    const x=rnd()*W, y=rnd()*H, a=rnd()*0.05;
-    g.fillStyle = rnd()>0.5 ? `rgba(255,240,215,${a})` : `rgba(0,0,0,${a})`;
-    g.fillRect(x,y,1.5,1.5);
+function bgLinen(g, W, H, rnd){
+  g.fillStyle = '#D9CFBE'; g.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y += 3){
+    g.fillStyle = `rgba(255,250,240,${.05 + rnd() * .10})`;
+    g.fillRect(0, y, W, 1.2);
   }
+  for (let x = 0; x < W; x += 3){
+    g.fillStyle = `rgba(90,74,58,${.03 + rnd() * .06})`;
+    g.fillRect(x, 0, 1.2, H);
+  }
+  for (let i = 0; i < 40; i++){
+    const cx = rnd() * W, cy = rnd() * H, r = 20 + rnd() * 90;
+    const rg = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+    rg.addColorStop(0, `rgba(0,0,0,${rnd() * .05})`); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg; g.fillRect(cx - r, cy - r, r * 2, r * 2);
+  }
+}
 
-  // 暗角
-  const vg = g.createRadialGradient(W/2,H*0.42,H*0.18, W/2,H*0.5,H*0.95);
-  vg.addColorStop(0,'rgba(0,0,0,0)');
-  vg.addColorStop(1,'rgba(0,0,0,0.55)');
-  g.fillStyle=vg; g.fillRect(0,0,W,H);
+function bgFelt(g, W, H, rnd){
+  const grad = g.createLinearGradient(0, 0, W * .3, H);
+  grad.addColorStop(0, '#39463E'); grad.addColorStop(.5, '#28322C'); grad.addColorStop(1, '#1B2320');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 14000; i++){
+    const a = rnd() * .07;
+    g.fillStyle = rnd() > .5 ? `rgba(255,255,245,${a})` : `rgba(0,0,0,${a})`;
+    g.fillRect(rnd() * W, rnd() * H, 1.6, 1.6);
+  }
+}
+
+function bgStone(g, W, H, rnd){
+  const grad = g.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, '#F2EDE3'); grad.addColorStop(.55, '#E5DDD0'); grad.addColorStop(1, '#D2C7B6');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  for (let v = 0; v < 5; v++){
+    g.beginPath();
+    let x = -20, y = rnd() * H;
+    g.moveTo(x, y);
+    for (; x < W + 20; x += 40){
+      y += (rnd() - .5) * 55;
+      g.quadraticCurveTo(x + 20, y + (rnd() - .5) * 30, x + 40, y);
+    }
+    g.strokeStyle = `rgba(140,124,104,${.08 + rnd() * .10})`;
+    g.lineWidth = .8 + rnd() * 2.6; g.stroke();
+  }
+  for (let i = 0; i < 2600; i++){
+    g.fillStyle = `rgba(120,104,86,${rnd() * .05})`;
+    g.fillRect(rnd() * W, rnd() * H, 1.4, 1.4);
+  }
+}
+
+const BG_FN = { wood: bgWood, linen: bgLinen, felt: bgFelt, stone: bgStone };
+
+/* 光 */
+function lightWash(g, W, H, rnd){
+  const corners = [[0, 0], [W, 0], [0, H], [W, H]];
+  const [lx, ly] = corners[Math.floor(rnd() * 4)];
+  const rg = g.createRadialGradient(lx, ly, 0, lx, ly, Math.max(W, H) * 1.05);
+  const warm = rnd() > .3;
+  rg.addColorStop(0, warm ? 'rgba(255,240,210,.20)' : 'rgba(240,245,255,.16)');
+  rg.addColorStop(.45, 'rgba(255,255,255,.05)');
+  rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, W, H);
+}
+
+function vignette(g, W, H){
+  const vg = g.createRadialGradient(W / 2, H * .45, Math.min(W, H) * .22, W / 2, H * .5, Math.max(W, H) * .82);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,.42)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+}
+
+function grain(g, W, H, rnd, amount){
+  for (let i = 0; i < amount; i++){
+    const a = rnd() * .045;
+    g.fillStyle = rnd() > .5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+    g.fillRect(rnd() * W, rnd() * H, 1.5, 1.5);
+  }
 }
 
 document.getElementById('share').onclick = async ()=>{
   if(!cur){ toast('先抽牌'); return; }
-  const btn=document.getElementById('share');
-  btn.disabled=true; btn.textContent='生成中…';
+  const btn = document.getElementById('share');
+  btn.disabled = true; btn.textContent = '生成中…';
   try{
-    const sp=DATA.spreads[cur.sk], q=cur.q, drawn=cur.drawn, seed=cur.seed, n=drawn.length;
-    const perRow = n<=3 ? n : (n===4 ? 2 : 3);
-    const rows = Math.ceil(n/perRow);
+    const sp = DATA.spreads[cur.sk], q = cur.q, drawn = cur.drawn, seed = cur.seed, n = drawn.length;
+    const rnd = mulberry(seed ^ (Date.now() & 0xffff));
+    const scene = Object.keys(SCENES)[Math.floor(rnd() * 4)];
+    const scr = SCENES[scene];
 
-    const CW=200, CH=Math.round(CW*1919/1144), GX=26;
-    const W=900, topY=214, rowH=CH+128, H=topY+rows*rowH+96;
+    const W = 900, CW = 232, CH = Math.round(CW * 1919 / 1144);
+    const PAD = 92, photoH = CH + PAD * 2;
+    const CAPH = 206, H = photoH + CAPH;
 
-    const c=document.createElement('canvas');
-    c.width=W; c.height=H;
-    const g=c.getContext('2d');
+    /* ---- 照片区（单独画布，带轻微手持倾斜）---- */
+    const photo = document.createElement('canvas');
+    photo.width = W; photo.height = photoH;
+    const pg = photo.getContext('2d');
 
-    paintTable(g, W, H, seed);
+    pg.save();
+    const tilt = (rnd() - .5) * 0.035;
+    pg.translate(W / 2, photoH / 2); pg.rotate(tilt); pg.scale(1.06, 1.06); pg.translate(-W / 2, -photoH / 2);
+    BG_FN[scene](pg, W, photoH, rnd);
+    pg.restore();
 
-    let s = (seed>>>0) || 1;
-    const rnd = ()=> (s = (s*1664525 + 1013904223)>>>0) / 4294967296;
+    lightWash(pg, W, photoH, rnd);
 
-    g.textAlign='center';
+    /* 牌位 */
+    const margin = 56;
+    const avail = W - margin * 2 - CW;
+    let step = n > 1 ? avail / (n - 1) : 0;
+    step = Math.min(step, CW * 1.22);
+    const rowW = CW + step * (n - 1);
+    const startX = (W - rowW) / 2;
+    const baseY = PAD;
 
-    // 顶部：像手写标注
-    g.fillStyle='rgba(242,230,212,.92)';
-    g.font='500 34px "PingFang SC","Microsoft YaHei",sans-serif';
-    g.fillText(sp.name, W/2, 96);
-    g.fillStyle='rgba(233,161,124,.95)';
-    g.font='26px "PingFang SC","Microsoft YaHei",sans-serif';
-    const qlines=wrapLines(g,'「'+(q||'整体走势')+'」',720).slice(0,2);
-    qlines.forEach((ln,i)=> g.fillText(ln, W/2, 146+i*38));
+    const imgs = await Promise.all(drawn.map(d=>loadImg('assets/cards/' + d.id + '.jpg')));
+    const useFan = rnd() > .55;
 
-    const imgs = await Promise.all(drawn.map(d=>loadImg('assets/cards/'+d.id+'.jpg')));
+    drawn.forEach((d, i)=>{
+      const jx = (rnd() - .5) * 16;
+      const jy = (rnd() - .5) * 18;
+      const cx = startX + step * i + CW / 2 + jx;
+      const cy = baseY + CH / 2 + jy + (useFan ? Math.abs(i - (n - 1) / 2) * 9 : 0);
 
-    drawn.forEach((d,i)=>{
-      const r=Math.floor(i/perRow), col=i%perRow;
-      const rowCount = Math.min(perRow, n - r*perRow);
-      const rowW = rowCount*CW + (rowCount-1)*GX;
-      const bx = (W-rowW)/2 + col*(CW+GX);
-      const by = topY + r*rowH;
+      let ang = (rnd() - .5) * .085;
+      if(useFan) ang += (i - (n - 1) / 2) * 0.055;
 
-      const tilt = (rnd()-0.5)*0.075;
-      const cx = bx+CW/2, cy = by+CH/2;
+      const rot = ang + (d.reversed ? Math.PI : 0);
 
-      // 卡影（两层，更像真的）
-      g.save();
-      g.translate(cx+7, cy+11); g.rotate(tilt);
-      g.fillStyle='rgba(0,0,0,0.42)';
-      g.filter='blur(11px)';
-      g.fillRect(-CW/2, -CH/2, CW, CH);
-      g.restore();
-      g.filter='none';
+      /* 影 */
+      pg.save();
+      pg.translate(cx + 8 + jx * .3, cy + 12);
+      pg.rotate(ang);
+      pg.filter = 'blur(13px)';
+      pg.fillStyle = 'rgba(0,0,0,.45)';
+      pg.fillRect(-CW / 2, -CH / 2, CW, CH);
+      pg.restore();
+      pg.filter = 'none';
 
-      g.save();
-      g.translate(cx, cy); g.rotate(tilt + (d.reversed?Math.PI:0));
-      g.shadowColor='rgba(0,0,0,.5)'; g.shadowBlur=7; g.shadowOffsetY=2;
-      g.drawImage(imgs[i], -CW/2, -CH/2, CW, CH);
-      g.restore();
+      /* 牌 */
+      pg.save();
+      pg.translate(cx, cy); pg.rotate(rot);
+      pg.shadowColor = 'rgba(0,0,0,.45)'; pg.shadowBlur = 5; pg.shadowOffsetY = 2;
+      pg.drawImage(imgs[i], -CW / 2, -CH / 2, CW, CH);
+      pg.restore();
 
-      // 牌边高光
-      g.save();
-      g.translate(cx, cy); g.rotate(tilt);
-      g.strokeStyle='rgba(255,240,215,.16)'; g.lineWidth=1.2;
-      g.strokeRect(-CW/2, -CH/2, CW, CH);
-      g.restore();
-
-      // 下方标注
-      const ty = by+CH+34;
-      g.fillStyle='rgba(226,208,184,.78)';
-      g.font='19px "PingFang SC","Microsoft YaHei",sans-serif';
-      g.fillText(sp.positions[i], cx, ty);
-      g.fillStyle='rgba(255,246,232,.97)';
-      g.font='bold 25px "PingFang SC","Microsoft YaHei",sans-serif';
-      g.fillText(DATA.cards[d.id].name+' · '+(d.reversed?'逆位':'正位'), cx, ty+34);
+      /* 边光 */
+      pg.save();
+      pg.translate(cx, cy); pg.rotate(ang);
+      pg.strokeStyle = 'rgba(255,244,222,.18)'; pg.lineWidth = 1.1;
+      pg.strokeRect(-CW / 2, -CH / 2, CW, CH);
+      pg.restore();
     });
 
-    g.fillStyle='rgba(210,192,168,.62)';
-    g.font='18px "PingFang SC","Microsoft YaHei",sans-serif';
-    g.fillText('seed '+seed, W/2, H-52);
-    g.fillStyle='rgba(210,192,168,.45)';
-    g.font='16px "PingFang SC","Microsoft YaHei",sans-serif';
-    g.fillText('仅供娱乐参考 · 不预测未来', W/2, H-26);
+    vignette(pg, W, photoH);
+    grain(pg, W, photoH, rnd, 9000);
 
-    document.getElementById('shareimg').src = c.toDataURL('image/jpeg',0.92);
-    document.getElementById('sharewrap').style.display='block';
-    document.getElementById('sharewrap').scrollIntoView({behavior:'smooth',block:'center'});
+    /* ---- 拼成整张 ---- */
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const g = c.getContext('2d');
+
+    g.fillStyle = scr.paper; g.fillRect(0, 0, W, H);
+    g.drawImage(photo, 0, 0);
+
+    /* 照片下沿的一道浅影，像纸片压着 */
+    const sh = g.createLinearGradient(0, photoH, 0, photoH + 26);
+    sh.addColorStop(0, 'rgba(0,0,0,.16)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = sh; g.fillRect(0, photoH, W, 26);
+
+    /* ---- 说明区 ---- */
+    g.textAlign = 'center';
+
+    g.fillStyle = scr.ink;
+    g.font = '500 30px "PingFang SC","Microsoft YaHei",sans-serif';
+    const qlines = wrapLines(g, q ? '「' + q + '」' : sp.name, 780).slice(0, 1);
+    g.fillText(qlines[0] || sp.name, W / 2, photoH + 62);
+
+    g.fillStyle = scr.sub;
+    g.font = '21px "PingFang SC","Microsoft YaHei",sans-serif';
+    const names = drawn.map((d, i)=>
+      sp.positions[i].split(' / ')[0] + ' ' + DATA.cards[d.id].name + (d.reversed ? '（逆）' : '')
+    ).join('   ·   ');
+    const nlines = wrapLines(g, names, 800).slice(0, 2);
+    nlines.forEach((ln, i)=> g.fillText(ln, W / 2, photoH + 104 + i * 30));
+
+    g.fillStyle = 'rgba(110,95,80,.55)';
+    g.font = '17px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillText('seed ' + seed + '　·　仅供娱乐参考，不预测未来', W / 2, H - 34);
+
+    document.getElementById('shareimg').src = c.toDataURL('image/jpeg', 0.92);
+    document.getElementById('sharewrap').style.display = 'block';
+    document.getElementById('sharewrap').scrollIntoView({behavior:'smooth', block:'center'});
   }catch(e){
-    toast('生成失败：'+e.message);
+    toast('生成失败：' + e.message);
   }finally{
-    btn.disabled=false; btn.textContent='📷 生成牌阵图';
+    btn.disabled = false; btn.textContent = '📷 生成牌阵图';
   }
 };
 
