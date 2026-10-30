@@ -50,6 +50,11 @@ button:active{transform:scale(.985)}
 .cardrow .nm{font-weight:600}
 .cardrow .pos{font-size:12px;color:var(--soft)}
 .cardrow .rev{margin-left:auto;font-size:12px;color:var(--coral)}
+.cardrow img{width:44px;border-radius:5px;box-shadow:0 1px 4px rgba(107,79,58,.22);flex:0 0 auto}
+.cardrow img.rev{transform:rotate(180deg)}
+#share{background:var(--cream);color:var(--ink);border:1.5px solid var(--line);margin-top:10px}
+#sharewrap{margin-top:14px}
+#shareimg{width:100%;border-radius:16px;border:1.5px solid var(--line);display:block}
 pre{
   white-space:pre-wrap;word-wrap:break-word;background:var(--cream);
   border:1.5px solid var(--line);border-radius:16px;padding:16px;
@@ -107,6 +112,11 @@ pre{
 <div id="out">
   <div id="cards" style="margin-top:20px"></div>
   <button id="gen">✨ AI 生成解读</button>
+  <button id="share">📷 生成牌阵图</button>
+  <div id="sharewrap" style="display:none">
+    <img id="shareimg" alt="牌阵图">
+    <div class="hint">长按图片 → 存储到照片，直接发给客户</div>
+  </div>
   <pre id="text"></pre>
   <div class="hint" id="hint"></div>
 </div>
@@ -320,6 +330,7 @@ document.getElementById('draw').onclick = ()=>{
     const el = document.createElement('div');
     el.className = 'cardrow';
     el.innerHTML = `<div class="idx">${i+1}</div>
+      <img src="assets/cards/${d.id}.jpg" class="${d.reversed?'rev':''}" alt="">
       <div><div class="nm">${DATA.cards[d.id].name}</div>
       <div class="pos">${sp.positions[i]}</div></div>
       <div class="rev">${d.reversed?'逆位':'正位'}</div>`;
@@ -453,6 +464,96 @@ async function doAiRead(){
   }
 }
 document.getElementById('gen').onclick = doAiRead;
+
+/* ---------- 牌阵图 ---------- */
+function loadImg(src){
+  return new Promise((res,rej)=>{
+    const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error(src)); im.src=src;
+  });
+}
+function wrapLines(ctx, text, maxW){
+  const lines=[]; let line='';
+  for(const ch of text){
+    if(ch==='\n'){ lines.push(line); line=''; continue; }
+    const t=line+ch;
+    if(ctx.measureText(t).width>maxW && line){ lines.push(line); line=ch; }
+    else line=t;
+  }
+  if(line) lines.push(line);
+  return lines;
+}
+
+document.getElementById('share').onclick = async ()=>{
+  if(!cur){ toast('先抽牌'); return; }
+  const btn=document.getElementById('share');
+  btn.disabled=true; btn.textContent='生成中…';
+  try{
+    const sp=DATA.spreads[cur.sk], q=cur.q, drawn=cur.drawn, seed=cur.seed, n=drawn.length;
+    const perRow = n<=3 ? n : (n===4 ? 2 : 3);
+    const rows = Math.ceil(n/perRow);
+    const CW=210, CH=Math.round(CW*1919/1144), GX=30;
+    const W=900, headH=292, rowH=CH+96, H=headH+rows*rowH+118;
+
+    const c=document.createElement('canvas');
+    c.width=W; c.height=H;
+    const g=c.getContext('2d');
+    g.fillStyle='#FBF6ED'; g.fillRect(0,0,W,H);
+
+    g.fillStyle='#E9DFCB';
+    for(let y=22;y<H;y+=42) for(let x=22;x<W;x+=42){ g.beginPath(); g.arc(x,y,1.7,0,7); g.fill(); }
+
+    g.textAlign='center';
+    g.fillStyle='#EF6B45';
+    g.font='bold 46px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillText('塔 罗 · '+sp.name, W/2, 96);
+
+    g.fillStyle='#6B4F3A';
+    g.font='30px "PingFang SC","Microsoft YaHei",sans-serif';
+    const qlines=wrapLines(g,'「'+(q||'整体走势')+'」',760).slice(0,2);
+    qlines.forEach((ln,i)=> g.fillText(ln, W/2, 162+i*44));
+
+    const imgs = await Promise.all(drawn.map(d=>loadImg('assets/cards/'+d.id+'.jpg')));
+
+    drawn.forEach((d,i)=>{
+      const r=Math.floor(i/perRow), col=i%perRow;
+      const rowCount = Math.min(perRow, n - r*perRow);
+      const rowW = rowCount*CW + (rowCount-1)*GX;
+      const x = (W-rowW)/2 + col*(CW+GX);
+      const y = headH + r*rowH;
+
+      g.save();
+      g.shadowColor='rgba(107,79,58,.20)'; g.shadowBlur=14; g.shadowOffsetY=4;
+      if(d.reversed){
+        g.translate(x+CW/2, y+CH/2); g.rotate(Math.PI);
+        g.drawImage(imgs[i], -CW/2, -CH/2, CW, CH);
+      }else{
+        g.drawImage(imgs[i], x, y, CW, CH);
+      }
+      g.restore();
+
+      g.fillStyle='#9C8474';
+      g.font='22px "PingFang SC","Microsoft YaHei",sans-serif';
+      g.fillText(sp.positions[i], x+CW/2, y+CH+34);
+      g.fillStyle='#6B4F3A';
+      g.font='bold 27px "PingFang SC","Microsoft YaHei",sans-serif';
+      g.fillText(DATA.cards[d.id].name+' · '+(d.reversed?'逆位':'正位'), x+CW/2, y+CH+70);
+    });
+
+    g.fillStyle='#A08A78';
+    g.font='20px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillText('抽牌存档 seed '+seed+' · 牌面可复查', W/2, H-60);
+    g.font='19px "PingFang SC","Microsoft YaHei",sans-serif';
+    g.fillText('仅供娱乐参考 · 不预测未来', W/2, H-28);
+
+    document.getElementById('shareimg').src = c.toDataURL('image/jpeg',0.9);
+    document.getElementById('sharewrap').style.display='block';
+    document.getElementById('sharewrap').scrollIntoView({behavior:'smooth',block:'center'});
+  }catch(e){
+    toast('生成失败：'+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent='📷 生成牌阵图';
+  }
+};
 
 document.getElementById('copy').onclick = async ()=>{
   if(!cur){ toast('先抽牌'); return; }
